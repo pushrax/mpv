@@ -288,6 +288,7 @@ static void releaseGlContext_x11(MPGLContext *ctx)
         XFree(*vinfo);
     *vinfo = NULL;
     if (*context) {
+        glXMakeCurrent(display, ctx->vo->x11->window, *context);
         if (gl->Finish)
             gl->Finish();
         glXMakeCurrent(display, None, NULL);
@@ -299,6 +300,18 @@ static void releaseGlContext_x11(MPGLContext *ctx)
 static void swapGlBuffers_x11(MPGLContext *ctx)
 {
     glXSwapBuffers(ctx->vo->x11->display, ctx->vo->x11->window);
+}
+
+static void set_current_x11(MPGLContext *ctx, bool current)
+{
+    struct vo *vo = ctx->vo;
+    struct glx_context *glx_ctx = ctx->priv;
+
+    if (current) {
+        glXMakeCurrent(vo->x11->display, vo->x11->window, glx_ctx->context);
+    } else {
+        glXMakeCurrent(vo->x11->display, None, NULL);
+    }
 }
 
 void mpgl_set_backend_x11(MPGLContext *ctx)
@@ -314,4 +327,5 @@ void mpgl_set_backend_x11(MPGLContext *ctx)
     ctx->ontop = vo_x11_ontop;
     ctx->vo_init = vo_x11_init;
     ctx->vo_uninit = vo_x11_uninit;
+    ctx->set_current = set_current_x11;
 }
