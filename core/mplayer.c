@@ -3668,11 +3668,6 @@ static void run_playloop(struct MPContext *mpctx)
     }
 }
 
-static void run_playloop_opaque_callback(void *context)
-{
-    run_playloop((struct MPContext *)context);
-}
-
 static int check_stop_play(void *context)
 {
     struct MPContext *mpctx = context;
@@ -3681,18 +3676,8 @@ static int check_stop_play(void *context)
 
 static void schedule_run_playloop(struct MPContext *mpctx)
 {
-
-    #ifdef CONFIG_COCOA
-        cocoa_run_loop_schedule(run_playloop_opaque_callback,
-                                check_stop_play,
-                                mpctx, // passed in as opaque type
-                                mpctx->input,
-                                mpctx->key_fifo);
-        cocoa_run_runloop();
-    #else
-        while (!check_stop_play(mpctx))
-            run_playloop(mpctx);
-    #endif
+    while (!check_stop_play(mpctx))
+        run_playloop(mpctx);
 }
 
 static int read_keys(void *ctx, int fd)
@@ -4485,11 +4470,6 @@ static void osdep_preinit(int *p_argc, char ***p_argv)
 
     GetCpuCaps(&gCpuCaps);
 
-#ifdef CONFIG_COCOA
-    init_cocoa_application();
-    macosx_finder_args_preinit(p_argc, p_argv);
-#endif
-
 #ifdef __MINGW32__
     mp_get_converted_argv(p_argc, p_argv);
 #endif
@@ -4518,7 +4498,7 @@ static void osdep_preinit(int *p_argc, char ***p_argv)
 /* This preprocessor directive is a hack to generate a mplayer-nomain.o object
  * file for some tools to link against. */
 #ifndef DISABLE_MAIN
-int main(int argc, char *argv[])
+static int mpv_main(int argc, char *argv[])
 {
     osdep_preinit(&argc, &argv);
 
@@ -4610,4 +4590,51 @@ int main(int argc, char *argv[])
 
     return 1;
 }
+
+#ifdef CONFIG_COCOA
+#include <pthread.h>
+static pthread_t playback_thread_id;
+
+struct playback_thread_ctx {
+    int  *argc;
+    char ***argv;
+};
+
+static void *playback_thread(void *ctx_obj)
+{
+    struct playback_thread_ctx *ctx = (struct playback_thread_ctx*) ctx_obj;
+    mpv_main(*ctx->argc, *ctx->argv);
+    cocoa_stop_runloop();
+    pthread_exit(NULL);
+}
+
+static int cocoa_main(int argc, char *argv[])
+{
+    struct playback_thread_ctx ctx = {0};
+    ctx.argc = &argc;
+    ctx.argv = &argv;
+
+    init_cocoa_application();
+    macosx_finder_args_preinit(&argc, &argv);
+    pthread_create(&playback_thread_id, NULL, playback_thread, &ctx);
+    cocoa_run_runloop();
+
+    // This should never be reached cocoa_run_runloop blocks until the process
+    // is quit
+    mp_msg(MSGT_CPLAYER, MSGL_ERR, "There was a problem initializing Cocoa "
+           "please report to a developer\n");
+    pthread_join(playback_thread_id, NULL);
+    return 1;
+}
+#endif /* CONFIG_COCOA */
+
+int main(int argc, char *argv[])
+{
+#if CONFIG_COCOA
+    cocoa_main(argc, argv);
+#else
+    mpv_main(argc, argv);
+#endif
+}
+
 #endif /* DISABLE_MAIN */

@@ -25,10 +25,8 @@
 #include "osdep/macosx_application_objc.h"
 #include "video/out/osx_common.h"
 
-// 0.0001 seems too much and 0.01 too low, no idea why this works so well
-#define COCOA_MAGIC_TIMER_DELAY 0.001
-
 static Application *app;
+static NSAutoreleasePool *pool;
 
 @interface Application (PrivateMethods)
 - (NSMenuItem *)menuItemWithParent:(NSMenu *)parent
@@ -54,12 +52,8 @@ static Application *app;
 @synthesize argumentsList = _arguments_list;
 @synthesize willStopOnOpenEvent = _will_stop_on_open_event;
 
-@synthesize callback = _callback;
-@synthesize shouldStopPlayback = _should_stop_playback;
-@synthesize context = _context;
 @synthesize inputContext = _input_context;
 @synthesize keyFIFO = _key_fifo;
-@synthesize callbackTimer = _callback_timer;
 @synthesize menuItems = _menu_items;
 
 - (id)init
@@ -118,32 +112,6 @@ static Application *app;
 }
 
 #undef _R
-
-- (void)call_callback
-{
-    if (self.shouldStopPlayback(self.context)) {
-        [NSApp stop:nil];
-        cocoa_post_fake_event();
-    } else {
-        self.callback(self.context);
-    }
-}
-
-- (void)schedule_timer
-{
-    self.callbackTimer =
-        [NSTimer timerWithTimeInterval:COCOA_MAGIC_TIMER_DELAY
-                                target:self
-                              selector:@selector(call_callback)
-                              userInfo:nil
-                               repeats:YES];
-
-    [[NSRunLoop currentRunLoop] addTimer:self.callbackTimer
-                                forMode:NSDefaultRunLoopMode];
-
-    [[NSRunLoop currentRunLoop] addTimer:self.callbackTimer
-                                forMode:NSEventTrackingRunLoopMode];
-}
 
 - (void)stopPlayback
 {
@@ -256,26 +224,38 @@ void terminate_cocoa_application(void)
     [NSApp terminate:app];
 }
 
-void cocoa_run_runloop(void)
+void cocoa_autorelease_pool_alloc(void)
+{
+    pool = [[NSAutoreleasePool alloc] init];
+}
+
+void cocoa_autorelease_pool_drain(void)
+{
+    [pool drain];
+}
+
+
+void cocoa_run_runloop()
 {
     NSAutoreleasePool *pool = [[NSAutoreleasePool alloc] init];
     [NSApp run];
     [pool drain];
 }
 
-void cocoa_run_loop_schedule(play_loop_callback callback,
-                             should_stop_callback stop_query,
-                             void *context,
-                             struct input_ctx *input_context,
-                             struct mp_fifo *key_fifo)
+void cocoa_stop_runloop(void)
+{
+    [NSApp performSelectorOnMainThread:@selector(stop:)
+                            withObject:nil
+                         waitUntilDone:false];
+    cocoa_post_fake_event();
+}
+
+void cocoa_set_state(struct input_ctx *input_context,
+                     struct mp_fifo *key_fifo)
 {
     [NSApp setDelegate:app];
-    app.callback            = callback;
-    app.context             = context;
-    app.shouldStopPlayback  = stop_query;
     app.inputContext        = input_context;
     app.keyFIFO             = key_fifo;
-    [app schedule_timer];
 }
 
 void cocoa_post_fake_event(void)
