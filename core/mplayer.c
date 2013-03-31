@@ -21,6 +21,7 @@
 #include <stdbool.h>
 #include <math.h>
 #include <assert.h>
+#include <ctype.h>
 
 #ifdef PTW32_STATIC_LIB
 #include <pthread.h>
@@ -28,6 +29,7 @@
 
 #include <libavutil/intreadwrite.h>
 #include <libavutil/attributes.h>
+#include <libavutil/md5.h>
 
 #include <libavcodec/version.h>
 
@@ -751,6 +753,86 @@ static void load_per_file_config(m_config_t *conf, const char * const file,
 
         talloc_free(confpath);
     }
+}
+
+static bool might_be_an_url(bstr f)
+{
+    return bstr_find0(f, "://") >= 0;
+}
+
+#define MP_WATCH_LATER_CONF "watch_later"
+
+static char *get_playback_restore_config_filename(const char *fname)
+{
+    char *res = NULL;
+    void *tmp = talloc_new(NULL);
+    const char *realpath = fname;
+    if (!might_be_an_url(bstr0(fname))) {
+        char *cwd = mp_getcwd(tmp);
+        if (!cwd)
+            goto exit;
+        realpath = mp_path_join(tmp, bstr0(cwd), bstr0(fname));
+    }
+    uint8_t md5[16];
+    av_md5_sum(md5, realpath, strlen(realpath));
+    // Keep everything predictable: take only N initial chars from the filename
+    char *base = mp_basename(realpath);
+    char *conf = talloc_asprintf(tmp, "%.50s_", base);
+    for (int i = 0; i < 16; i++)
+        conf = talloc_asprintf_append(conf, "%02X", md5[i]);
+
+    // Filename could still contain arbitrary stuff
+    for (int i = 0; conf[i]; i++) {
+        if (!isalnum(conf[i]))
+            conf[i] = '_';
+    }
+
+    conf = talloc_asprintf(tmp, "%s/%s", MP_WATCH_LATER_CONF, conf);
+
+    res = mp_find_user_config_file(conf);
+
+exit:
+    talloc_free(tmp);
+    return res;
+}
+
+void mp_write_watch_later_conf(struct MPContext *mpctx)
+{
+    void *tmp = talloc_new(NULL);
+    char *filename = mpctx->filename;
+    if (!filename)
+        goto exit;
+
+    char *confdir = talloc_steal(tmp, mp_find_user_config_file(""));
+    if (confdir) {
+        char *watch_later_dir = talloc_asprintf(tmp, "%s/%s", confdir,
+                                                MP_WATCH_LATER_CONF);
+        mkdir(watch_later_dir, 0777);
+    }
+
+    char *conffile = get_playback_restore_config_filename(mpctx->filename);
+    talloc_steal(tmp, conffile);
+    if (!conffile)
+        goto exit;
+
+    FILE *file = fopen(conffile, "wb");
+    if (!file)
+        goto exit;
+    fprintf(file, "start=%f\n", get_current_time(mpctx));
+    fclose(file);
+
+exit:
+    talloc_free(tmp);
+}
+
+static void load_playback_restore(m_config_t *conf, const char *file)
+{
+    char *fname = get_playback_restore_config_filename(file);
+    if (fname) {
+        try_load_config(conf, fname);
+        unlink(fname);
+    }
+    talloc_free(fname);
 }
 
 static void load_per_file_options(m_config_t *conf,
@@ -3861,7 +3943,8 @@ static void play_current_file(struct MPContext *mpctx)
         load_per_output_config(mpctx->mconfig, PROFILE_CFG_AO,
                                opts->audio_driver_list[0]);
 
-    assert(mpctx->playlist->current);
+    load_playback_restore(mpctx->mconfig, mpctx->filename);
+
     load_per_file_options(mpctx->mconfig, mpctx->playlist->current->params,
                           mpctx->playlist->current->num_params);
 
@@ -4430,6 +4513,7 @@ int main(int argc, char *argv[])
     init_input(mpctx);
 
     mpctx->playlist->current = mpctx->playlist->first;
+
     play_files(mpctx);
 
     exit_player(mpctx, mpctx->stop_play == PT_QUIT ? EXIT_QUIT : EXIT_EOF,

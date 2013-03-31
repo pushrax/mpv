@@ -120,6 +120,8 @@ typedef struct MPOpts {
     int play_frames;
     double step_sec;
     int64_t seek_to_byte;
+    int position_restore;
+    int position_save_on_quit;
     int start_paused;
     int keep_open;
     int audio_id;
