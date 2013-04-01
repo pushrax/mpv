@@ -780,17 +780,9 @@ static char *get_playback_restore_config_filename(const char *fname)
     }
     uint8_t md5[16];
     av_md5_sum(md5, realpath, strlen(realpath));
-    // Keep everything predictable: take only N initial chars from the filename
-    char *base = mp_basename(realpath);
-    char *conf = talloc_asprintf(tmp, "%.50s_", base);
+    char *conf = talloc_strdup(tmp, "");
     for (int i = 0; i < 16; i++)
         conf = talloc_asprintf_append(conf, "%02X", md5[i]);
-
-    // Filename could still contain arbitrary stuff
-    for (int i = 0; conf[i]; i++) {
-        if (!isalnum(conf[i]))
-            conf[i] = '_';
-    }
 
     conf = talloc_asprintf(tmp, "%s/%s", MP_WATCH_LATER_CONF, conf);
 
