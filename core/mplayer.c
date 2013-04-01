@@ -800,6 +800,11 @@ void mp_write_watch_later_conf(struct MPContext *mpctx)
     if (!filename)
         goto exit;
 
+    double pos = get_current_time(mpctx);
+    int percent = get_percent_pos(mpctx);
+    if (percent < 5 || percent > 95)
+        goto exit;
+
     mk_config_dir(MP_WATCH_LATER_CONF);
 
     char *conffile = get_playback_restore_config_filename(mpctx->filename);
@@ -810,7 +815,7 @@ void mp_write_watch_later_conf(struct MPContext *mpctx)
     FILE *file = fopen(conffile, "wb");
     if (!file)
         goto exit;
-    fprintf(file, "start=%f\n", get_current_time(mpctx));
+    fprintf(file, "start=%f\n", pos);
     fclose(file);
 
 exit:
