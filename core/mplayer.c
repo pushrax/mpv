@@ -3940,7 +3940,8 @@ static void play_current_file(struct MPContext *mpctx)
         load_per_output_config(mpctx->mconfig, PROFILE_CFG_AO,
                                opts->audio_driver_list[0]);
 
-    load_playback_restore(mpctx->mconfig, mpctx->filename);
+    if (opts->position_restore)
+        load_playback_restore(mpctx->mconfig, mpctx->filename);
 
     load_per_file_options(mpctx->mconfig, mpctx->playlist->current->params,
                           mpctx->playlist->current->num_params);
@@ -4224,6 +4225,9 @@ goto_enable_cache: ;
 #endif
 
 terminate_playback:  // don't jump here after ao/vo/getch initialization!
+
+    if (opts->position_save_on_quit && mpctx->stop_play != PT_RESTART)
+        mp_write_watch_later_conf(mpctx);
 
     if (mpctx->step_frames)
         mpctx->paused = 1;
