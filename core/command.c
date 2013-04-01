@@ -1842,7 +1842,6 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
         break;
 
     case MP_CMD_QUIT:
-        mp_write_watch_later_conf(mpctx); //temp
         mpctx->stop_play = PT_QUIT;
         mpctx->quit_player_rc = cmd->args[0].v.i;
         break;
