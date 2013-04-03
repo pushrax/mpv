@@ -793,6 +793,48 @@ exit:
     return res;
 }
 
+static const char *backup_properties[] = {
+    "osd-level",
+    //"loop",
+    "speed",
+    "edition",
+    "pause",
+    "volume",
+    "mute",
+    "audio-delay",
+    //"balance",
+    "fullscreen",
+    "colormatrix",
+    "colormatrix-input-range",
+    "colormatrix-output-range",
+    "ontop",
+    "border",
+    "gamma",
+    "brightness",
+    "contrast",
+    "saturation",
+    "hue",
+    "panscan",
+    "audio",
+    "video",
+    "sub",
+    "sub-delay",
+    "sub-pos",
+    //"sub-visibility",
+    "sub-scale",
+    "ass-use-margins",
+    "ass-vsfilter-aspect-compat",
+    "ass-style-override",
+    0
+};
+
+static const char *map_option[][2] = {
+    {"video", "vid"},
+    {"audio", "aid"},
+    {"sub",   "sid"},
+    {0}
+};
+
 void mp_write_watch_later_conf(struct MPContext *mpctx)
 {
     void *tmp = talloc_new(NULL);
@@ -802,7 +844,7 @@ void mp_write_watch_later_conf(struct MPContext *mpctx)
 
     double pos = get_current_time(mpctx);
     int percent = get_percent_pos(mpctx);
-    if (percent < 5 || percent > 95)
+    if (percent < 5 || percent > 95 || pos == MP_NOPTS_VALUE)
         goto exit;
 
     mk_config_dir(MP_WATCH_LATER_CONF);
@@ -816,6 +858,19 @@ void mp_write_watch_later_conf(struct MPContext *mpctx)
     if (!file)
         goto exit;
     fprintf(file, "start=%f\n", pos);
+    for (int i = 0; backup_properties[i]; i++) {
+        const char *pname = backup_properties[i];
+        const char *oname = pname;
+        for (int x = 0; map_option[x][0]; x++) {
+            if (strcmp(map_option[x][0], pname) == 0)
+                oname = map_option[x][1];
+        }
+        char *tmp = NULL;
+        int r = mp_property_do(pname, M_PROPERTY_GET_STRING, &tmp, mpctx);
+        if (r == M_PROPERTY_OK)
+            fprintf(file, "%s=%s\n", oname, tmp);
+        talloc_free(tmp);
+    }
     fclose(file);
 
 exit:
