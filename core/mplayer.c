@@ -820,9 +820,9 @@ static const char *backup_properties[] = {
     "saturation",
     "hue",
     "panscan",
-    "audio",
-    "video",
-    "sub",
+    "aid",
+    "vid",
+    "sid",
     "sub-delay",
     "sub-pos",
     //"sub-visibility",
@@ -831,13 +831,6 @@ static const char *backup_properties[] = {
     "ass-vsfilter-aspect-compat",
     "ass-style-override",
     0
-};
-
-static const char *map_option[][2] = {
-    {"video", "vid"},
-    {"audio", "aid"},
-    {"sub",   "sid"},
-    {0}
 };
 
 void mp_write_watch_later_conf(struct MPContext *mpctx)
@@ -865,15 +858,10 @@ void mp_write_watch_later_conf(struct MPContext *mpctx)
     fprintf(file, "start=%f\n", pos);
     for (int i = 0; backup_properties[i]; i++) {
         const char *pname = backup_properties[i];
-        const char *oname = pname;
-        for (int x = 0; map_option[x][0]; x++) {
-            if (strcmp(map_option[x][0], pname) == 0)
-                oname = map_option[x][1];
-        }
         char *tmp = NULL;
         int r = mp_property_do(pname, M_PROPERTY_GET_STRING, &tmp, mpctx);
         if (r == M_PROPERTY_OK)
-            fprintf(file, "%s=%s\n", oname, tmp);
+            fprintf(file, "%s=%s\n", pname, tmp);
         talloc_free(tmp);
     }
     fclose(file);
