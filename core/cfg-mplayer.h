@@ -297,6 +297,7 @@ const m_option_t common_opts[] = {
     {"priority", &proc_priority, CONF_TYPE_STRING, 0, 0, 0, NULL},
 #endif
     OPT_FLAG("config", load_config, CONF_GLOBAL | CONF_NOCFG | CONF_PRE_PARSE),
+    OPT_STRINGLIST("reset-on-next-file", reset_options, CONF_GLOBAL),
 
 // ------------------------- stream options --------------------
 
@@ -391,6 +392,7 @@ const m_option_t common_opts[] = {
     OPT_STRING("audio-demuxer", audio_demuxer_name, 0),
     OPT_STRING("sub-demuxer", sub_demuxer_name, 0),
     OPT_FLAG("extbased", extension_parsing, 0),
+    OPT_FLAG("mkv-subtitle-preroll", mkv_subtitle_preroll, 0),
 
     {"mf", (void *) mfopts_conf, CONF_TYPE_SUBCONFIG, 0,0,0, NULL},
 #ifdef CONFIG_RADIO
@@ -542,7 +544,7 @@ const m_option_t mplayer_opts[]={
                 {"yes", SOFTVOL_YES},
                 {"auto", SOFTVOL_AUTO})),
     OPT_FLOATRANGE("softvol-max", softvol_max, 0, 10, 10000),
-    {"volstep", &volstep, CONF_TYPE_INT, CONF_RANGE, 0, 100, NULL},
+    OPT_INTRANGE("volstep", volstep, 0, 0, 100),
     OPT_FLOATRANGE("volume", mixer_init_volume, 0, -1, 10000),
     OPT_CHOICE("mute", mixer_init_mute, M_OPT_OPTIONAL_PARAM,
                ({"auto", -1},
@@ -571,7 +573,7 @@ const m_option_t mplayer_opts[]={
     // set fullscreen switch method (workaround for buggy WMs)
     OPT_INTRANGE("fsmode-dontuse", vo.fsmode, 0, 31, 4096),
     OPT_INT("colorkey", vo.colorkey, 0),
-    OPT_INT("no-colorkey", vo.colorkey, 0x1000000),
+    OPT_FLAG_STORE("no-colorkey", vo.colorkey, 0, 0x1000000),
     OPT_FLOATRANGE("panscan", vo.panscan, 0, 0.0, 1.0),
     OPT_FLOATRANGE("panscanrange", vo.panscanrange, 0, -19.0, 99.0),
     OPT_FLAG("force-rgba-osd-rendering", force_rgba_osd, 0),
@@ -598,6 +600,7 @@ const m_option_t mplayer_opts[]={
     OPT_STRINGLIST("fstype", vo.fstype_list, 0),
 #endif
     OPT_STRING("heartbeat-cmd", heartbeat_cmd, 0),
+    OPT_FLOAT("heartbeat-interval", heartbeat_interval, CONF_MIN, 0),
     OPT_FLAG("mouseinput", vo.nomouse_input, 0),
 
     OPT_CHOICE_OR_INT("screen", vo.screen_id, 0, 0, 32,

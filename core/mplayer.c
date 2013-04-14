@@ -177,8 +177,7 @@ static const char av_desync_help_text[] = _(
 "- Slow video output.\n"
 "     Try a different -vo driver (-vo help for a list) or try -framedrop!\n"
 "- Playing a video file with --vo=opengl with higher FPS than the monitor.\n"
-"     This is due to vsync limiting the framerate. Try --no-vsync, or a\n"
-"     different VO.\n"
+"     This is due to vsync limiting the framerate.\n"
 "- Playing from a slow network source.\n"
 "     Download the file instead.\n"
 "- Try to find out whether audio or video is causing this by experimenting\n"
@@ -370,9 +369,6 @@ static void print_file_properties(struct MPContext *mpctx, const char *filename)
     }
 }
 
-/// step size of mixer changes
-int volstep = 3;
-
 // Time used to seek external tracks to.
 static double get_main_demux_pts(struct MPContext *mpctx)
 {
@@ -455,6 +451,8 @@ static void uninit_subs(struct demuxer *demuxer)
 
 void uninit_player(struct MPContext *mpctx, unsigned int mask)
 {
+    struct MPOpts *opts = &mpctx->opts;
+
     mask &= mpctx->initialized_flags;
 
     mp_msg(MSGT_CPLAYER, MSGL_DBG2, "\n*** uninit(0x%X)\n", mask);
@@ -547,8 +545,15 @@ void uninit_player(struct MPContext *mpctx, unsigned int mask)
 
     if (mask & INITIALIZED_AO) {
         mpctx->initialized_flags &= ~INITIALIZED_AO;
-        if (mpctx->mixer.ao)
+        if (mpctx->mixer.ao) {
+            // Normally the mixer remembers volume, but do it even if the
+            // volume is set explicitly with --volume=...
+            if (opts->mixer_init_volume >= 0 && mpctx->mixer.user_set_volume)
+                mixer_getbothvolume(&mpctx->mixer, &opts->mixer_init_volume);
+            if (opts->mixer_init_mute >= 0 && mpctx->mixer.user_set_mute)
+                opts->mixer_init_mute = mixer_getmute(&mpctx->mixer);
             mixer_uninit(&mpctx->mixer);
+        }
         if (mpctx->ao)
             ao_uninit(mpctx->ao, mpctx->stop_play != AT_END_OF_FILE);
         mpctx->ao = NULL;
@@ -1733,7 +1738,7 @@ void reinit_audio_chain(struct MPContext *mpctx)
                 "Couldn't find matching filter/ao format!\n");
         goto init_error;
     }
-    mpctx->mixer.volstep = volstep;
+    mpctx->mixer.volstep = opts->volstep;
     mpctx->mixer.softvol = opts->softvol;
     mpctx->mixer.softvol_max = opts->softvol_max;
     mixer_reinit(&mpctx->mixer, ao);
@@ -2826,9 +2831,9 @@ static void seek_reset(struct MPContext *mpctx, bool reset_ao, bool reset_ac)
     mpctx->hrseek_active = false;
     mpctx->hrseek_framedrop = false;
     mpctx->total_avsync_change = 0;
-    mpctx->step_frames = 0;
     mpctx->drop_frame_cnt = 0;
     mpctx->dropped_frames = 0;
+    mpctx->playback_pts = MP_NOPTS_VALUE;
 
 #ifdef CONFIG_ENCODING
     encode_lavc_discontinuity(mpctx->encode_lavc_ctx);
@@ -2955,6 +2960,8 @@ static int seek(MPContext *mpctx, struct seek_params seek,
         demuxer_style |= SEEK_BACKWARD;
     else if (seek.direction > 0)
         demuxer_style |= SEEK_FORWARD;
+    if (hr_seek || opts->mkv_subtitle_preroll)
+        demuxer_style |= SEEK_SUBPREROLL;
 
     if (hr_seek)
         demuxer_amount -= opts->hr_seek_demuxer_offset;
@@ -3095,16 +3102,8 @@ double get_current_time(struct MPContext *mpctx)
         return 0;
     if (demuxer->stream_pts != MP_NOPTS_VALUE)
         return demuxer->stream_pts;
-    if (!mpctx->restart_playback) {
-        double apts = playing_audio_pts(mpctx);
-        if (apts != MP_NOPTS_VALUE)
-            return apts;
-        if (mpctx->sh_video) {
-            double pts = mpctx->video_pts;
-            if (pts != MP_NOPTS_VALUE)
-                return pts;
-        }
-    }
+    if (mpctx->playback_pts != MP_NOPTS_VALUE)
+        return mpctx->playback_pts;
     if (mpctx->last_seek_pts != MP_NOPTS_VALUE)
         return mpctx->last_seek_pts;
     return 0;
@@ -3276,8 +3275,8 @@ static void handle_pause_on_low_cache(struct MPContext *mpctx)
             unpause_player(mpctx);
     } else if (!mpctx->paused) {
         if (cache >= 0 && cache <= opts->stream_cache_pause && !idle) {
-            pause_player(mpctx);
             mpctx->paused_for_cache = true;
+            pause_player(mpctx);
         }
     }
 }
@@ -3385,10 +3384,11 @@ static void run_playloop(struct MPContext *mpctx)
         vo_check_events(vo);
 
         if (opts->heartbeat_cmd) {
-            static unsigned last_heartbeat;
             unsigned now = GetTimerMS();
-            if (now - last_heartbeat > 30000) {
-                last_heartbeat = now;
+            if (now - mpctx->last_heartbeat >
+                (unsigned)(opts->heartbeat_interval * 1000))
+            {
+                mpctx->last_heartbeat = now;
                 system(opts->heartbeat_cmd);
             }
         }
@@ -3446,6 +3446,7 @@ static void run_playloop(struct MPContext *mpctx)
         struct sh_video *sh_video = mpctx->sh_video;
         mpctx->video_pts = sh_video->pts;
         mpctx->last_vo_pts = mpctx->video_pts;
+        mpctx->playback_pts = mpctx->video_pts;
         update_subtitles(mpctx, sh_video->pts);
         update_osd_msg(mpctx);
         draw_osd(mpctx);
@@ -3502,25 +3503,6 @@ static void run_playloop(struct MPContext *mpctx)
         break;
     } // video
 
-    // If no more video is available, one frame means one playloop iteration.
-    // Otherwise, one frame means one video frame.
-    if (!video_left)
-        new_frame_shown = true;
-
-    if (mpctx->max_frames >= 0) {
-        if (new_frame_shown)
-            mpctx->max_frames--;
-        if (mpctx->max_frames <= 0)
-            mpctx->stop_play = PT_NEXT_ENTRY;
-    }
-
-    if (mpctx->step_frames > 0 && !mpctx->paused) {
-        if (new_frame_shown)
-            mpctx->step_frames--;
-        if (mpctx->step_frames == 0)
-            pause_player(mpctx);
-    }
-
     if (mpctx->sh_audio && (mpctx->restart_playback ? !video_left :
                             mpctx->ao->untimed && (mpctx->delay <= 0 ||
                                                    !video_left))) {
@@ -3546,17 +3528,11 @@ static void run_playloop(struct MPContext *mpctx)
             a_pos = (written_audio_pts(mpctx) -
                      mpctx->opts.playback_speed * buffered_audio);
         }
+        mpctx->playback_pts = a_pos;
         print_status(mpctx);
 
         if (!mpctx->sh_video)
             update_subtitles(mpctx, a_pos);
-    }
-
-    if (opts->playing_msg && !mpctx->playing_msg_shown && new_frame_shown) {
-        mpctx->playing_msg_shown = true;
-        char *msg = mp_property_expand_string(mpctx, opts->playing_msg);
-        mp_msg(MSGT_CPLAYER, MSGL_INFO, "%s\n", msg);
-        talloc_free(msg);
     }
 
     /* It's possible for the user to simultaneously switch both audio
@@ -3585,7 +3561,40 @@ static void run_playloop(struct MPContext *mpctx)
                         }, true);
         } else
             mpctx->stop_play = AT_END_OF_FILE;
-    } else if (!mpctx->stop_play) {
+        sleeptime = 0;
+    }
+
+    if (!mpctx->stop_play && !mpctx->restart_playback) {
+
+        // If no more video is available, one frame means one playloop iteration.
+        // Otherwise, one frame means one video frame.
+        if (!video_left)
+            new_frame_shown = true;
+
+        if (opts->playing_msg && !mpctx->playing_msg_shown && new_frame_shown) {
+            mpctx->playing_msg_shown = true;
+            char *msg = mp_property_expand_string(mpctx, opts->playing_msg);
+            mp_msg(MSGT_CPLAYER, MSGL_INFO, "%s\n", msg);
+            talloc_free(msg);
+        }
+
+        if (mpctx->max_frames >= 0) {
+            if (new_frame_shown)
+                mpctx->max_frames--;
+            if (mpctx->max_frames <= 0)
+                mpctx->stop_play = PT_NEXT_ENTRY;
+        }
+
+        if (mpctx->step_frames > 0 && !mpctx->paused) {
+            if (new_frame_shown)
+                mpctx->step_frames--;
+            if (mpctx->step_frames == 0)
+                pause_player(mpctx);
+        }
+
+    }
+
+    if (!mpctx->stop_play) {
         double audio_sleep = 9;
         if (mpctx->sh_audio && !mpctx->paused) {
             if (mpctx->ao->untimed) {
@@ -3650,7 +3659,9 @@ static void run_playloop(struct MPContext *mpctx)
     }
 
     // handle -sstep
-    if (opts->step_sec > 0 && !mpctx->paused && !mpctx->restart_playback) {
+    if (opts->step_sec > 0 && !mpctx->stop_play && !mpctx->paused &&
+        !mpctx->restart_playback)
+    {
         set_osd_function(mpctx, OSD_FFW);
         queue_seek(mpctx, MPSEEK_RELATIVE, opts->step_sec, 0);
     }
@@ -3968,7 +3979,6 @@ static void play_current_file(struct MPContext *mpctx)
 
     mpctx->stop_play = 0;
     mpctx->filename = NULL;
-    mpctx->file_format = DEMUXER_TYPE_UNKNOWN;
 
     if (mpctx->playlist->current)
         mpctx->filename = mpctx->playlist->current->filename;
@@ -4000,6 +4010,17 @@ static void play_current_file(struct MPContext *mpctx)
 
     load_per_file_options(mpctx->mconfig, mpctx->playlist->current->params,
                           mpctx->playlist->current->num_params);
+
+    if (opts->reset_options) {
+        for (int n = 0; opts->reset_options[n]; n++) {
+            const char *opt = opts->reset_options[n];
+            if (strcmp(opt, "all") == 0) {
+                m_config_mark_all_file_local(mpctx->mconfig);
+            } else {
+                m_config_mark_file_local(mpctx->mconfig, opt);
+            }
+        }
+    }
 
     // We must enable getch2 here to be able to interrupt network connection
     // or cache filling
@@ -4034,14 +4055,15 @@ static void play_current_file(struct MPContext *mpctx)
     mpctx->resolve_result = resolve_url(stream_filename, opts);
     if (mpctx->resolve_result)
         stream_filename = mpctx->resolve_result->url;
-    mpctx->stream = open_stream(stream_filename, opts, &mpctx->file_format);
+    int file_format = DEMUXER_TYPE_UNKNOWN;
+    mpctx->stream = open_stream(stream_filename, opts, &file_format);
     if (!mpctx->stream) { // error...
         demux_was_interrupted(mpctx);
         goto terminate_playback;
     }
     mpctx->initialized_flags |= INITIALIZED_STREAM;
 
-    if (mpctx->file_format == DEMUXER_TYPE_PLAYLIST) {
+    if (file_format == DEMUXER_TYPE_PLAYLIST) {
         mp_msg(MSGT_CPLAYER, MSGL_ERR, "\nThis looks like a playlist, but "
                "playlist support will not be used automatically.\n"
                "mpv's playlist code is unsafe and should only be used with "
@@ -4081,7 +4103,7 @@ goto_enable_cache: ;
 
     mpctx->audio_delay = opts->audio_delay;
 
-    mpctx->demuxer = demux_open(opts, mpctx->stream, mpctx->file_format,
+    mpctx->demuxer = demux_open(opts, mpctx->stream, file_format,
                                 opts->audio_id, opts->video_id, opts->sub_id,
                                 mpctx->filename);
     mpctx->master_demuxer = mpctx->demuxer;
@@ -4154,33 +4176,6 @@ goto_enable_cache: ;
     reinit_audio_chain(mpctx);
     reinit_subs(mpctx);
 
-    //================== MAIN: ==========================
-
-    if (!mpctx->sh_video && !mpctx->sh_audio) {
-        mp_tmsg(MSGT_CPLAYER, MSGL_FATAL,
-                "No video or audio streams selected.\n");
-#ifdef CONFIG_DVBIN
-        if (mpctx->stream->type == STREAMTYPE_DVB) {
-            int dir;
-            int v = mpctx->last_dvb_step;
-            if (v > 0)
-                dir = DVB_CHANNEL_HIGHER;
-            else
-                dir = DVB_CHANNEL_LOWER;
-
-            if (dvb_step_channel(mpctx->stream, dir)) {
-                mpctx->stop_play = PT_NEXT_ENTRY;
-                mpctx->dvbin_reopen = 1;
-            }
-        }
-#endif
-        goto terminate_playback;
-    }
-
-    // Disable the term OSD in verbose mode
-    if (verbose)
-        opts->term_osd = 0;
-
     //================ SETUP STREAMS ==========================
 
     if (mpctx->sh_video) {
@@ -4215,6 +4210,27 @@ goto_enable_cache: ;
 
     //==================== START PLAYING =======================
 
+    if (!mpctx->sh_video && !mpctx->sh_audio) {
+        mp_tmsg(MSGT_CPLAYER, MSGL_FATAL,
+                "No video or audio streams selected.\n");
+#ifdef CONFIG_DVBIN
+        if (mpctx->stream->type == STREAMTYPE_DVB) {
+            int dir;
+            int v = mpctx->last_dvb_step;
+            if (v > 0)
+                dir = DVB_CHANNEL_HIGHER;
+            else
+                dir = DVB_CHANNEL_LOWER;
+
+            if (dvb_step_channel(mpctx->stream, dir)) {
+                mpctx->stop_play = PT_NEXT_ENTRY;
+                mpctx->dvbin_reopen = 1;
+            }
+        }
+#endif
+        goto terminate_playback;
+    }
+
     mp_tmsg(MSGT_CPLAYER, MSGL_V, "Starting playback...\n");
 
     mpctx->drop_frame_cnt = 0;
@@ -4232,6 +4248,7 @@ goto_enable_cache: ;
     mpctx->video_pts = 0;
     mpctx->last_vo_pts = MP_NOPTS_VALUE;
     mpctx->last_seek_pts = 0;
+    mpctx->playback_pts = MP_NOPTS_VALUE;
     mpctx->hrseek_active = false;
     mpctx->hrseek_framedrop = false;
     mpctx->step_frames = 0;
@@ -4289,9 +4306,6 @@ terminate_playback:  // don't jump here after ao/vo/getch initialization!
 
     mp_msg(MSGT_CPLAYER, MSGL_INFO, "\n");
 
-    // xxx handle this as INITIALIZED_CONFIG?
-    m_config_leave_file_local(mpctx->mconfig);
-
     // time to uninit all, except global stuff:
     int uninitialize_parts = INITIALIZED_ALL;
     if (opts->fixed_vo)
@@ -4301,8 +4315,10 @@ terminate_playback:  // don't jump here after ao/vo/getch initialization!
         uninitialize_parts -= INITIALIZED_AO;
     uninit_player(mpctx, uninitialize_parts);
 
+    // xxx handle this as INITIALIZED_CONFIG?
+    m_config_leave_file_local(mpctx->mconfig);
+
     mpctx->filename = NULL;
-    mpctx->file_format = DEMUXER_TYPE_UNKNOWN;
     talloc_free(mpctx->resolve_result);
     mpctx->resolve_result = NULL;
 
@@ -4494,7 +4510,6 @@ int main(int argc, char *argv[])
 
     struct MPContext *mpctx = talloc(NULL, MPContext);
     *mpctx = (struct MPContext){
-        .file_format = DEMUXER_TYPE_UNKNOWN,
         .last_dvb_step = 1,
         .terminal_osd_text = talloc_strdup(mpctx, ""),
         .playlist = talloc_struct(mpctx, struct playlist, {0}),

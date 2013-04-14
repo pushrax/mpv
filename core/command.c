@@ -146,7 +146,8 @@ static int mp_property_playback_speed(m_option_t *prop, int action,
         opts->playback_speed = *(float *) arg;
         // Adjust time until next frame flip for nosound mode
         mpctx->time_frame *= orig_speed / opts->playback_speed;
-        reinit_audio_chain(mpctx);
+        if (mpctx->sh_audio)
+            reinit_audio_chain(mpctx);
         return M_PROPERTY_OK;
     }
     case M_PROPERTY_PRINT:
@@ -850,9 +851,9 @@ static int mp_property_fullscreen(m_option_t *prop,
                                   void *arg,
                                   MPContext *mpctx)
 {
-    struct mp_vo_opts *opts = mpctx->video_out->opts;
     if (!mpctx->video_out)
         return M_PROPERTY_UNAVAILABLE;
+    struct mp_vo_opts *opts = mpctx->video_out->opts;
 
     if (action == M_PROPERTY_SET) {
         if (opts->fs == !!*(int *) arg)
@@ -1526,7 +1527,6 @@ static struct property_osd_display {
     { "contrast", _("Contrast"), .osd_progbar = OSD_CONTRAST },
     { "saturation", _("Saturation"), .osd_progbar = OSD_SATURATION },
     { "hue", _("Hue"), .osd_progbar = OSD_HUE },
-    { "vsync", _("VSync") },
     { "angle", _("Angle") },
     // subs
     { "sub", _("Subtitles") },
@@ -1942,14 +1942,16 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
         char *filename = cmd->args[0].v.s;
         bool append = cmd->args[1].v.i;
         struct playlist *pl = playlist_parse_file(filename);
-        if (!pl) {
+        if (pl) {
             if (!append)
                 playlist_clear(mpctx->playlist);
             playlist_transfer_entries(mpctx->playlist, pl);
             talloc_free(pl);
 
-            if (!append)
-                mpctx->stop_play = PT_NEXT_ENTRY;
+            if (!append) {
+                mpctx->playlist->current = mpctx->playlist->first;
+                mpctx->stop_play = PT_CURRENT_ENTRY;
+            }
         } else {
             mp_tmsg(MSGT_CPLAYER, MSGL_ERR,
                     "\nUnable to load playlist %s.\n", filename);

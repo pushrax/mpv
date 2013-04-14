@@ -103,6 +103,7 @@ enum timestamp_type {
 #define SEEK_FACTOR   (1 << 1)
 #define SEEK_FORWARD  (1 << 2)
 #define SEEK_BACKWARD (1 << 3)
+#define SEEK_SUBPREROLL (1 << 4)
 
 // demux_lavf can pass lavf buffers using FF_INPUT_BUFFER_PADDING_SIZE instead
 #define MP_INPUT_BUFFER_PADDING_SIZE 16
@@ -182,6 +183,7 @@ typedef struct demuxer_desc {
 
 typedef struct demux_chapter
 {
+    int original_index;
     uint64_t start, end;
     char *name;
 } demux_chapter_t;
@@ -393,6 +395,7 @@ int demuxer_add_chapter(struct demuxer *demuxer, struct bstr name,
                         uint64_t start, uint64_t end);
 int demuxer_seek_chapter(struct demuxer *demuxer, int chapter,
                          double *seek_pts);
+void demuxer_sort_chapters(demuxer_t *demuxer);
 
 /// Get current chapter index if available.
 int demuxer_get_current_chapter(struct demuxer *demuxer, double time_now);

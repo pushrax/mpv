@@ -54,6 +54,12 @@ void osd_init_backend(struct osd_state *osd)
 
 void osd_destroy_backend(struct osd_state *osd)
 {
+    for (int n = 0; n < MAX_OSD_PARTS; n++) {
+        struct osd_object *obj = osd->objs[n];
+        if (obj->osd_track)
+            ass_free_track(obj->osd_track);
+        obj->osd_track = NULL;
+    }
     if (osd->osd_render)
         ass_renderer_done(osd->osd_render);
     osd->osd_render = NULL;
@@ -290,6 +296,16 @@ static void update_progbar(struct osd_state *osd, struct osd_object *obj)
     ass_draw_start(d);
     float pos = osd->progbar_value * width - border / 2;
     ass_draw_rect_cw(d, 0, 0, pos, height);
+    ass_draw_stop(d);
+    add_osd_ass_event(obj->osd_track, d->text);
+    ass_draw_reset(d);
+
+    // position marker
+    d->text = talloc_asprintf_append(d->text, "{\\bord%f\\pos(%f,%f)}",
+                                     border / 2, px, py);
+    ass_draw_start(d);
+    ass_draw_move_to(d, pos + border / 2, 0);
+    ass_draw_line_to(d, pos + border / 2, height);
     ass_draw_stop(d);
     add_osd_ass_event(obj->osd_track, d->text);
     ass_draw_reset(d);

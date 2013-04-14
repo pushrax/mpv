@@ -215,9 +215,12 @@ typedef struct MPContext {
     // As video_pts, but is not reset when seeking away. (For the very short
     // period of time until a new frame is decoded and shown.)
     double last_vo_pts;
+    // Video PTS, or audio PTS if video has ended.
+    double playback_pts;
 
     float audio_delay;
 
+    unsigned int last_heartbeat;
     // used to prevent hanging in some error cases
     unsigned int start_timestamp;
 
@@ -244,8 +247,6 @@ typedef struct MPContext {
     double last_chapter_pts;
 
     struct ass_library *ass_library;
-
-    int file_format;
 
     int last_dvb_step;
     int dvbin_reopen;

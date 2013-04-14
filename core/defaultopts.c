@@ -16,6 +16,7 @@ void set_default_mplayer_options(struct MPOpts *opts)
         .softvol_max = 200,
         .mixer_init_volume = -1,
         .mixer_init_mute = -1,
+        .volstep = 3,
         .ao_buffersize = -1,
         .vo = {
             .video_driver_list = NULL,
@@ -36,6 +37,7 @@ void set_default_mplayer_options(struct MPOpts *opts)
             .WinID = -1,
         },
         .wintitle = "mpv - ${media-title}",
+        .heartbeat_interval = 30.0,
         .gamma_gamma = 1000,
         .gamma_brightness = 1000,
         .gamma_contrast = 1000,
@@ -56,6 +58,7 @@ void set_default_mplayer_options(struct MPOpts *opts)
         .stream_cache_pause = 10.0,
         .chapterrange = {-1, -1},
         .edition_id = -1,
+        .default_max_pts_correction = -1,
         .user_correct_pts = -1,
         .initial_audio_sync = 1,
         .term_osd = 2,

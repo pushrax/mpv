@@ -43,6 +43,8 @@ typedef struct mp_vo_opts {
 } mp_vo_opts;
 
 typedef struct MPOpts {
+    char **reset_options;
+
     char **audio_driver_list;
     int fixed_vo;
     char *mixer_device;
@@ -50,6 +52,7 @@ typedef struct MPOpts {
     int softvol;
     float mixer_init_volume;
     int mixer_init_mute;
+    int volstep;
     float softvol_max;
     int gapless_audio;
     int ao_buffersize;
@@ -109,6 +112,7 @@ typedef struct MPOpts {
     char *status_msg;
     char *osd_status_msg;
     char *heartbeat_cmd;
+    float heartbeat_interval;
     int player_idle_mode;
     int slave_mode;
     int consolecontrols;
@@ -141,6 +145,7 @@ typedef struct MPOpts {
     char *audio_demuxer_name;
     char *sub_demuxer_name;
     int extension_parsing;
+    int mkv_subtitle_preroll;
 
     struct image_writer_opts *screenshot_image_opts;
     char *screenshot_template;
@@ -216,7 +221,6 @@ typedef struct MPOpts {
         int ar_delay;
         int ar_rate;
         char *js_dev;
-        char *ar_dev;
         char *in_file;
         int use_joystick;
         int use_lirc;

@@ -786,7 +786,8 @@
 
 --heartbeat-cmd
     Command that is executed every 30 seconds during playback via *system()* -
-    i.e. using the shell.
+    i.e. using the shell. The time between the commands can be customized with
+    the ``--heartbeat-interval`` option.
 
     *NOTE*: mpv uses this command without any checking. It is your
     responsibility to ensure it does not cause security problems (e.g. make
@@ -804,6 +805,9 @@
 
     *EXAMPLE for GNOME screensaver*: ``mpv
     --heartbeat-cmd="gnome-screensaver-command -p" file``
+
+--heartbeat-interval=<sec>
+    Time between ``--heartbeat-cmd`` invocations in seconds (default: 30).
 
 --help
     Show short summary of options.
@@ -906,10 +910,6 @@
 --input-conf=<filename>
     Specify input configuration file other than the default
     ``~/.mpv/input.conf``.
-
---input-ar-dev=<device>
-    Device to be used for Apple IR Remote (default is autodetected, Linux
-    only).
 
 --input-ar-delay
     Delay in milliseconds before we start to autorepeat a key (0 to
@@ -1169,6 +1169,29 @@
     :fps=<value>:  output fps (default: 25)
     :type=<value>: input file type (available: jpeg, png, tga, sgi)
 
+--mkv-subtitle-preroll
+    Try harder to show embedded soft subtitles when seeking somewhere. Normally,
+    it can happen that the subtitle at the seek target is not shown due to how
+    some container file formats are designed. The subtitles appear only if
+    seeking before or exactly to the position a subtitle first appears. To
+    make this worse, subtitles are often timed to appear a very small amount
+    before the associated video frame, so that seeking to the video frame
+    typically does not demux the subtitle at that position.
+
+    Enabling this option makes the demuxer start reading data a bit before the
+    seek target, so that subtitles appear correctly. Note that this makes
+    seeking slower, and is not guaranteed to always work. It only works if the
+    subtitle is close enough to the seek target.
+
+    Works with the internal Matroska demuxer only. Always enabled for absolute
+    and hr-seeks, and this option changes behavior with relative or imprecise
+    seeks only.
+
+    See also ``--hr-seek-demuxer-offset`` option. This option can achieve a
+    similar effect, but only if hr-seek is active. It works with any demuxer,
+    but makes seeking much slower, as it has to decode audio and video data,
+    instead of just skipping over it.
+
 --mixer=<device>
     Use a mixer device different from the default ``/dev/mixer``. For ALSA
     this is the mixer name.
@@ -1331,6 +1354,9 @@
 
 --osd-back-color=<#RRGGBB>, --sub-text-back-color=<#RRGGBB>
     See ``--osd-color``. Color used for OSD/sub text background.
+
+--osd-blur=<0..20.0>, --sub-text-blur=<0..20.0>
+    Gaussian blur factor. 0 means no blur applied (default).
 
 --osd-border-color=<#RRGGBB>, --sub-text-border-color=<#RRGGBB>
     See ``--osd-color``. Color used for the OSD/sub font border.
@@ -1719,6 +1745,30 @@
 
 --referrer=<string>
     Specify a referrer path or URL for HTTP requests.
+
+--reset-on-next-file=<all|option1,option2,...>
+    Normally, mpv will try to keep all settings when playing the next file on
+    the playlist, even if they were changed by the user during playback. (This
+    behavior is the opposite of MPlayer's, which tries to reset all settings
+    when starting next file.)
+
+    This can be changed with this option. It accepts a list of options, and
+    mpv will reset the value of these options on playback start to the initial
+    value. The initial value is either the default value, or as set by the
+    config file or command line.
+
+    In some cases, this might not work as expected. For example, ``--volume``
+    will only be reset the volume if it's explicitly set in the config file
+    or the command line.
+
+    The special name ``all`` resets as many options as possible.
+
+    *EXAMPLE*:
+
+    - ``--reset-on-next-file=fullscreen,speed`` Reset fullscreen and playback
+      speed settings if they were changed during playback.
+    - ``--reset-on-next-file=all`` Try to reset all settings that were changed
+      during playback.
 
 --reuse-socket
     (udp:// only)

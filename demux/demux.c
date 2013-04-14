@@ -948,6 +948,7 @@ static struct demuxer *open_given_type(struct MPOpts *opts,
             opts->correct_pts =
                 demux_control(demuxer, DEMUXER_CTRL_CORRECT_PTS,
                             NULL) == DEMUXER_CTRL_OK;
+        demuxer_sort_chapters(demuxer);
         return demuxer;
     } else {
         // demux_mov can return playlist instead of mov
@@ -1237,7 +1238,10 @@ void demuxer_switch_track(struct demuxer *demuxer, enum stream_type type,
         if (demuxer->ds[type]->id != index2)
             ds_free_packs(demuxer->ds[type]);
         demuxer->ds[type]->id = index2;
+    } else {
+        abort();
     }
+
     int new_id = demuxer->ds[type]->id;
     void *new = NULL;
     if (new_id >= 0) {
@@ -1278,10 +1282,10 @@ static int chapter_compare(const void *p1, const void *p2)
         return 1;
     else if (c1->start < c2->start)
         return -1;
-    return 0;
+    return c1->original_index > c2->original_index ? 1 :-1; // never equal
 }
 
-static void demuxer_sort_chapters(demuxer_t *demuxer)
+void demuxer_sort_chapters(demuxer_t *demuxer)
 {
     qsort(demuxer->chapters, demuxer->num_chapters,
           sizeof(struct demux_chapter), chapter_compare);
@@ -1290,24 +1294,14 @@ static void demuxer_sort_chapters(demuxer_t *demuxer)
 int demuxer_add_chapter(demuxer_t *demuxer, struct bstr name,
                         uint64_t start, uint64_t end)
 {
-    if (!(demuxer->num_chapters % 32))
-        demuxer->chapters = talloc_realloc(demuxer, demuxer->chapters,
-                                           struct demux_chapter,
-                                           demuxer->num_chapters + 32);
-
-    demuxer->chapters[demuxer->num_chapters].start = start;
-    demuxer->chapters[demuxer->num_chapters].end = end;
-    demuxer->chapters[demuxer->num_chapters].name = name.len ?
-        talloc_strndup(demuxer->chapters, name.start, name.len) :
-        talloc_strdup(demuxer->chapters, mp_gtext("unknown"));
-
-    demuxer->num_chapters++;
-
-    if (demuxer->num_chapters > 1
-        && demuxer->chapters[demuxer->num_chapters - 2].start
-           < demuxer->chapters[demuxer->num_chapters - 1].start)
-            demuxer_sort_chapters(demuxer);
-
+    struct demux_chapter new = {
+        .original_index = demuxer->num_chapters,
+        .start = start,
+        .end = end,
+        .name = name.len ? bstrdup0(demuxer, name)
+                         : talloc_strdup(demuxer, mp_gtext("unknown")),
+    };
+    MP_TARRAY_APPEND(demuxer, demuxer->chapters, demuxer->num_chapters, new);
     return 0;
 }
 
