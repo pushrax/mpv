@@ -270,17 +270,17 @@ int vo_cocoa_init(struct vo *vo)
 
 void vo_cocoa_uninit(struct vo *vo)
 {
-    vo_cocoa_set_current_context(vo, true);
-    struct vo_cocoa_state *s = vo->cocoa;
-    CGDisplayShowCursor(kCGDirectMainDisplay);
-    enable_power_management(vo);
-    [NSApp setPresentationOptions:NSApplicationPresentationDefault];
-    vo_cocoa_set_current_context(vo, false);
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        struct vo_cocoa_state *s = vo->cocoa;
+        CGDisplayShowCursor(kCGDirectMainDisplay);
+        enable_power_management(vo);
+        [NSApp setPresentationOptions:NSApplicationPresentationDefault];
 
-    [s->window release];
-    s->window = nil;
-    [s->glContext release];
-    s->glContext = nil;
+        [s->window release];
+        s->window = nil;
+        [s->glContext release];
+        s->glContext = nil;
+    });
 }
 
 void vo_cocoa_pause(struct vo *vo)
