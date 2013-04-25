@@ -842,7 +842,7 @@ void mp_write_watch_later_conf(struct MPContext *mpctx)
 
     double pos = get_current_time(mpctx);
     int percent = get_percent_pos(mpctx);
-    if (percent < 5 || percent > 95 || pos == MP_NOPTS_VALUE)
+    if (percent < 1 || percent > 99 || pos == MP_NOPTS_VALUE)
         goto exit;
 
     mk_config_dir(MP_WATCH_LATER_CONF);
