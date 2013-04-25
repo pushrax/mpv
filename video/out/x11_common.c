@@ -44,6 +44,7 @@
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
 #include <X11/keysym.h>
+#include <X11/XKBlib.h>
 
 #ifdef CONFIG_XSS
 #include <X11/extensions/scrnsaver.h>
@@ -450,6 +451,12 @@ int vo_x11_init(struct vo *vo)
     x11->screen = DefaultScreen(x11->display);  // screen ID
     x11->rootwin = RootWindow(x11->display, x11->screen);   // root window ID
 
+    if (!opts->native_keyrepeat) {
+        Bool ok = False;
+        XkbSetDetectableAutoRepeat(x11->display, True, &ok);
+        x11->no_autorepeat = ok;
+    }
+
     x11->xim = XOpenIM(x11->display, NULL, NULL, NULL);
 
     init_atoms(vo->x11);
@@ -629,6 +636,8 @@ void vo_x11_uninit(struct vo *vo)
     struct vo_x11_state *x11 = vo->x11;
     assert(x11);
 
+    mplayer_put_key(vo->key_fifo, MP_INPUT_RELEASE_ALL);
+
     saver_on(x11);
     if (x11->window != None)
         vo_showcursor(vo, x11->display, x11->window);
@@ -721,6 +730,8 @@ int vo_x11_check_events(struct vo *vo)
             char buf[100];
             KeySym keySym = 0;
             int modifiers = 0;
+            if (x11->no_autorepeat)
+                modifiers |= MP_KEY_STATE_DOWN;
             if (Event.xkey.state & ShiftMask)
                 modifiers |= MP_KEY_MODIFIER_SHIFT;
             if (Event.xkey.state & ControlMask)
@@ -747,8 +758,17 @@ int vo_x11_check_events(struct vo *vo)
                 if (mpkey)
                     mplayer_put_key(vo->key_fifo, mpkey | modifiers);
             }
+            break;
         }
-        break;
+        // Releasing all keys in these situations is simpler and ensures no
+        // keys can be get "stuck".
+        case FocusOut:
+        case KeyRelease:
+        {
+            if (x11->no_autorepeat)
+                mplayer_put_key(vo->key_fifo, MP_INPUT_RELEASE_ALL);
+            break;
+        }
         case MotionNotify:
             vo_mouse_movement(vo, Event.xmotion.x, Event.xmotion.y);
             vo_x11_unhide_cursor(vo);
@@ -924,16 +944,6 @@ static void vo_x11_update_window_title(struct vo *vo)
     vo_x11_set_property_utf8(vo, x11->XA_NET_WM_ICON_NAME, title);
 }
 
-static void setup_window_params(struct vo_x11_state *x11, XVisualInfo *vis,
-                                unsigned long *mask, XSetWindowAttributes *att)
-{
-    vo_x11_create_colormap(x11, vis);
-
-    *mask = CWBorderPixel | CWColormap;
-    att->border_pixel = 0;
-    att->colormap = x11->colormap;
-}
-
 static void find_default_visual(struct vo_x11_state *x11, XVisualInfo *vis)
 {
     Display *display = x11->display;
@@ -956,9 +966,12 @@ static void vo_x11_create_window(struct vo *vo, XVisualInfo *vis, int x, int y,
         find_default_visual(x11, vis);
     }
 
-    unsigned long xswamask;
-    XSetWindowAttributes xswa;
-    setup_window_params(x11, vis, &xswamask, &xswa);
+    vo_x11_create_colormap(x11, vis);
+    unsigned long xswamask = CWBorderPixel | CWColormap;
+    XSetWindowAttributes xswa = {
+        .border_pixel = 0,
+        .colormap = x11->colormap,
+    };
 
     Window parent = vo->opts->WinID >= 0 ? vo->opts->WinID : x11->rootwin;
 
@@ -988,7 +1001,8 @@ static void vo_x11_map_window(struct vo *vo, int x, int y, int w, int h)
         vo_x11_decoration(vo, 0);
     // map window
     vo_x11_selectinput_witherr(vo, x11->display, x11->window,
-                               StructureNotifyMask | KeyPressMask |
+                               StructureNotifyMask |
+                               KeyPressMask | KeyReleaseMask |
                                ButtonPressMask | ButtonReleaseMask |
                                PointerMotionMask | ExposureMask);
     XMapWindow(x11->display, x11->window);

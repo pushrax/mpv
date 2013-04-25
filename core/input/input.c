@@ -61,7 +61,7 @@
 #include <lirc/lircc.h>
 #endif
 
-#define MP_MAX_KEY_DOWN 32
+#define MP_MAX_KEY_DOWN 4
 
 struct cmd_bind {
     int input[MP_MAX_KEY_DOWN + 1];
@@ -129,6 +129,7 @@ static const mp_cmd_t mp_cmds[] = {
   { MP_CMD_QUIT_WATCH_LATER, "quit_watch_later", },
   { MP_CMD_STOP, "stop", },
   { MP_CMD_FRAME_STEP, "frame_step", },
+  { MP_CMD_FRAME_BACK_STEP, "frame_back_step", },
   { MP_CMD_PLAYLIST_NEXT, "playlist_next", {
       OARG_CHOICE(0, ({"weak", 0},              {"0", 0},
                       {"force", 1},             {"1", 1})),
@@ -1143,11 +1144,9 @@ static struct cmd_bind *section_find_bind_for_key(struct input_ctx *ictx,
     return bs->cmd_binds ? find_bind_for_key(bs->cmd_binds, n, keys) : NULL;
 }
 
-static mp_cmd_t *get_cmd_from_keys(struct input_ctx *ictx, int n, int *keys)
+static struct cmd_bind *find_any_bind_for_key(struct input_ctx *ictx,
+                                              int n, int *keys)
 {
-    if (ictx->test)
-        return handle_test(ictx, n, keys);
-
     struct cmd_bind *cmd
         = section_find_bind_for_key(ictx, false, ictx->section, n, keys);
     if (ictx->default_bindings && cmd == NULL)
@@ -1157,6 +1156,20 @@ static mp_cmd_t *get_cmd_from_keys(struct input_ctx *ictx, int n, int *keys)
             cmd = section_find_bind_for_key(ictx, false, "default", n, keys);
         if (ictx->default_bindings && cmd == NULL)
             cmd = section_find_bind_for_key(ictx, true, "default", n, keys);
+    }
+    return cmd;
+}
+
+static mp_cmd_t *get_cmd_from_keys(struct input_ctx *ictx, int n, int *keys)
+{
+    if (ictx->test)
+        return handle_test(ictx, n, keys);
+
+    struct cmd_bind *cmd = find_any_bind_for_key(ictx, n, keys);
+    if (cmd == NULL && n > 1) {
+        // Hitting two keys at once, and if there's no binding for this
+        // combination, the key hit last should be checked.
+        cmd = find_any_bind_for_key(ictx, 1, (int[]){keys[n - 1]});
     }
 
     if (cmd == NULL) {
@@ -1187,7 +1200,7 @@ static mp_cmd_t *interpret_key(struct input_ctx *ictx, int code)
      * we want to have "a" and "A" instead of "a" and "Shift+A"; but a separate
      * shift modifier is still kept for special keys like arrow keys.
      */
-    int unmod = code & ~MP_KEY_MODIFIER_MASK;
+    int unmod = code & ~(MP_KEY_MODIFIER_MASK | MP_KEY_STATE_DOWN);
     if (unmod >= 32 && unmod < MP_KEY_BASE)
         code &= ~MP_KEY_MODIFIER_SHIFT;
 
@@ -1209,7 +1222,10 @@ static mp_cmd_t *interpret_key(struct input_ctx *ictx, int code)
         ictx->num_key_down++;
         ictx->last_key_down = GetTimer();
         ictx->ar_state = 0;
-        return NULL;
+        ret = NULL;
+        if (!(code & MP_NO_REPEAT_KEY))
+            ret = get_cmd_from_keys(ictx, ictx->num_key_down, ictx->key_down);
+        return ret;
     }
     // button released or press of key with no separate down/up events
     for (j = 0; j < ictx->num_key_down; j++) {
@@ -1225,6 +1241,7 @@ static mp_cmd_t *interpret_key(struct input_ctx *ictx, int code)
         j = ictx->num_key_down - 1;
         ictx->key_down[j] = code;
     }
+    bool emit_key = ictx->last_key_down && (code & MP_NO_REPEAT_KEY);
     if (j == ictx->num_key_down) {  // was not already down; add temporarily
         if (ictx->num_key_down > MP_MAX_KEY_DOWN) {
             mp_tmsg(MSGT_INPUT, MSGL_ERR, "Too many key down events "
@@ -1233,12 +1250,12 @@ static mp_cmd_t *interpret_key(struct input_ctx *ictx, int code)
         }
         ictx->key_down[ictx->num_key_down] = code;
         ictx->num_key_down++;
-        ictx->last_key_down = 1;
+        emit_key = true;
     }
     // Interpret only maximal point of multibutton event
-    ret = ictx->last_key_down ?
-          get_cmd_from_keys(ictx, ictx->num_key_down, ictx->key_down)
-          : NULL;
+    ret = NULL;
+    if (emit_key)
+        ret = get_cmd_from_keys(ictx, ictx->num_key_down, ictx->key_down);
     if (doubleclick) {
         ictx->key_down[j] = code - MP_MOUSE_BTN0_DBL + MP_MOUSE_BTN0;
         return ret;
@@ -1261,6 +1278,8 @@ static mp_cmd_t *check_autorepeat(struct input_ctx *ictx)
     if (ictx->ar_rate > 0 && ictx->ar_state >= 0 && ictx->num_key_down > 0
         && !(ictx->key_down[ictx->num_key_down - 1] & MP_NO_REPEAT_KEY)) {
         unsigned int t = GetTimer();
+        if (ictx->last_ar + 2000000 < t)
+            ictx->last_ar = t;
         // First time : wait delay
         if (ictx->ar_state == 0
             && (t - ictx->last_key_down) >= ictx->ar_delay * 1000)
@@ -1273,12 +1292,12 @@ static mp_cmd_t *check_autorepeat(struct input_ctx *ictx)
                 return NULL;
             }
             ictx->ar_state = 1;
-            ictx->last_ar = t;
+            ictx->last_ar = ictx->last_key_down + ictx->ar_delay * 1000;
             return mp_cmd_clone(ictx->ar_cmd);
             // Then send rate / sec event
         } else if (ictx->ar_state == 1
                    && (t - ictx->last_ar) >= 1000000 / ictx->ar_rate) {
-            ictx->last_ar = t;
+            ictx->last_ar += 1000000 / ictx->ar_rate;
             return mp_cmd_clone(ictx->ar_cmd);
         }
     }
@@ -1289,11 +1308,13 @@ void mp_input_feed_key(struct input_ctx *ictx, int code)
 {
     ictx->got_new_events = true;
     if (code == MP_INPUT_RELEASE_ALL) {
+        mp_msg(MSGT_INPUT, MSGL_V, "input: release all\n");
         memset(ictx->key_down, 0, sizeof(ictx->key_down));
         ictx->num_key_down = 0;
         ictx->last_key_down = 0;
         return;
     }
+    mp_msg(MSGT_INPUT, MSGL_V, "input: key code=%#x\n", code);
     struct mp_cmd *cmd = interpret_key(ictx, code);
     if (!cmd)
         return;
@@ -1350,6 +1371,10 @@ static void read_key_fd(struct input_ctx *ictx, struct input_fd *key_fd)
  */
 static void read_events(struct input_ctx *ictx, int time)
 {
+    if (ictx->num_key_down) {
+        time = FFMIN(time, 1000 / ictx->ar_rate);
+        time = FFMIN(time, ictx->ar_delay);
+    }
     ictx->got_new_events = false;
     struct input_fd *key_fds = ictx->key_fds;
     struct input_fd *cmd_fds = ictx->cmd_fds;

@@ -321,6 +321,12 @@
     from slow media, but can also have negative effects, especially with file
     formats that require a lot of seeking, such as mp4. See also ``--no-cache``.
 
+    Note that half the cache size will be used to allow fast seeking back. This
+    is also the reason why a full cache is usually reported as 50% full. The
+    cache fill display does not include the part of the cache reserved for
+    seeking back. Likewise, when starting a file the cache will be at 100%,
+    because no space is reserved for seeking back yet.
+
 --cache-pause=<no|percentage>
     If the cache percentage goes below the specified value, pause and wait
     until the percentage set by ``--cache-min`` is reached, then resume
@@ -1271,6 +1277,12 @@
 --name
     Set the window class name for X11-based video output methods.
 
+--native-keyrepeat
+    Use system settings for keyrepeat delay and rate, instead of
+    ``--input-ar-delay`` and ``--input-ar-rate``. (Whether this applies
+    depends on the VO backend and how it handles keyboard input. Does not
+    apply to terminal input.)
+
 --avi-ni
     (Internal AVI demuxer which is not used by default only)
     Force usage of non-interleaved AVI parser (fixes playback of some bad AVI
@@ -1733,9 +1745,6 @@
     :size=<value>:                 frame size in Bytes
 
     *EXAMPLE*:
-
-    - ``mpv foreman.qcif --demuxer=rawvideo --rawvideo=qcif`` Play the
-      famous "foreman" sample video.
 
     - ``mpv sample-720x576.yuv --demuxer=rawvideo --rawvideo=w=720:h=576``
       Play a raw YUV sample.

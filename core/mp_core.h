@@ -95,6 +95,7 @@ struct track {
     // If this track is from an external file (e.g. subtitle file).
     bool is_external;
     char *external_filename;
+    bool auto_loaded;
 
     // If the track's stream changes with the timeline (ordered chapters).
     bool under_timeline;
@@ -114,6 +115,10 @@ struct track {
 
     // External text subtitle using non-libass subtitle renderer.
     struct sub_data *subdata;
+};
+
+enum {
+    MAX_NUM_VO_PTS = 100,
 };
 
 typedef struct MPContext {
@@ -218,6 +223,15 @@ typedef struct MPContext {
     // Video PTS, or audio PTS if video has ended.
     double playback_pts;
 
+    // History of video frames timestamps that were queued in the VO
+    // This includes even skipped frames during hr-seek
+    double vo_pts_history_pts[MAX_NUM_VO_PTS];
+    // Whether the PTS at vo_pts_history[n] is after a seek reset
+    uint64_t vo_pts_history_seek[MAX_NUM_VO_PTS];
+    uint64_t vo_pts_history_seek_ts;
+    uint64_t backstep_start_seek_ts;
+    bool backstep_active;
+
     float audio_delay;
 
     unsigned int last_heartbeat;
@@ -251,7 +265,7 @@ typedef struct MPContext {
     int last_dvb_step;
     int dvbin_reopen;
 
-    int paused;
+    bool paused;
     // step this many frames, then pause
     int step_frames;
     // Counted down each frame, stop playback if 0 is reached. (-1 = disable)
@@ -286,7 +300,7 @@ struct track *mp_add_subtitles(struct MPContext *mpctx, char *filename,
 int reinit_video_chain(struct MPContext *mpctx);
 void pause_player(struct MPContext *mpctx);
 void unpause_player(struct MPContext *mpctx);
-void add_step_frame(struct MPContext *mpctx);
+void add_step_frame(struct MPContext *mpctx, int dir);
 void queue_seek(struct MPContext *mpctx, enum seek_type type, double amount,
                 int exact);
 int seek_chapter(struct MPContext *mpctx, int chapter, double *seek_pts);

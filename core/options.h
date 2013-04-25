@@ -17,6 +17,7 @@ typedef struct mp_vo_opts {
     int stop_screensaver;
     char *winname;
     char** fstype_list;
+    int native_keyrepeat;
 
     float panscan;
     float panscanrange;
@@ -126,7 +127,7 @@ typedef struct MPOpts {
     int64_t seek_to_byte;
     int position_restore;
     int position_save_on_quit;
-    int start_paused;
+    int pause;
     int keep_open;
     int audio_id;
     int video_id;

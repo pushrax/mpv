@@ -518,19 +518,15 @@ static int mp_property_pause(m_option_t *prop, int action, void *arg,
 {
     MPContext *mpctx = ctx;
 
-    switch (action) {
-    case M_PROPERTY_SET:
+    if (action == M_PROPERTY_SET) {
         if (*(int *)arg) {
             pause_player(mpctx);
         } else {
             unpause_player(mpctx);
         }
         return M_PROPERTY_OK;
-    case M_PROPERTY_GET:
-        *(int *)arg = mpctx->paused;
-        return M_PROPERTY_OK;
     }
-    return M_PROPERTY_NOT_IMPLEMENTED;
+    return mp_property_generic_option(prop, action, arg, ctx);
 }
 
 static int mp_property_cache(m_option_t *prop, int action, void *arg,
@@ -834,10 +830,12 @@ static int mp_property_program(m_option_t *prop, int action, void *arg,
                    "Selected program contains no audio or video streams!\n");
             return M_PROPERTY_ERROR;
         }
-        mp_switch_track(mpctx, STREAM_AUDIO,
-                find_track_by_demuxer_id(mpctx, STREAM_AUDIO, prog.aid));
         mp_switch_track(mpctx, STREAM_VIDEO,
                 find_track_by_demuxer_id(mpctx, STREAM_VIDEO, prog.vid));
+        mp_switch_track(mpctx, STREAM_AUDIO,
+                find_track_by_demuxer_id(mpctx, STREAM_AUDIO, prog.aid));
+        mp_switch_track(mpctx, STREAM_SUB,
+                find_track_by_demuxer_id(mpctx, STREAM_VIDEO, prog.sid));
         return M_PROPERTY_OK;
     }
     return M_PROPERTY_NOT_IMPLEMENTED;
@@ -1379,8 +1377,7 @@ static const m_option_t mp_properties[] = {
       CONF_RANGE, -2, 10, NULL },
     { "metadata", mp_property_metadata, CONF_TYPE_STRING_LIST,
       0, 0, 0, NULL },
-    { "pause", mp_property_pause, CONF_TYPE_FLAG,
-      M_OPT_RANGE, 0, 1, NULL },
+    M_OPTION_PROPERTY_CUSTOM("pause", mp_property_pause),
     { "cache", mp_property_cache, CONF_TYPE_INT },
     M_OPTION_PROPERTY("pts-association-mode"),
     M_OPTION_PROPERTY("hr-seek"),
@@ -1847,7 +1844,11 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
     }
 
     case MP_CMD_FRAME_STEP:
-        add_step_frame(mpctx);
+        add_step_frame(mpctx, 1);
+        break;
+
+    case MP_CMD_FRAME_BACK_STEP:
+        add_step_frame(mpctx, -1);
         break;
 
     case MP_CMD_QUIT:
@@ -2320,7 +2321,7 @@ void run_command(MPContext *mpctx, mp_cmd_t *cmd)
         pause_player(mpctx);
         break;
     case 3:     // "pausing_toggle"
-        if (mpctx->paused)
+        if (opts->pause)
             unpause_player(mpctx);
         else
             pause_player(mpctx);

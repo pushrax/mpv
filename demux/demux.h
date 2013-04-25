@@ -90,6 +90,8 @@ enum timestamp_type {
 #define DEMUXER_CTRL_DONTKNOW 0
 #define DEMUXER_CTRL_OK 1
 #define DEMUXER_CTRL_GUESS 2
+
+#define DEMUXER_CTRL_SWITCHED_TRACKS 9
 #define DEMUXER_CTRL_GET_TIME_LENGTH 10
 #define DEMUXER_CTRL_GET_START_TIME 11
 #define DEMUXER_CTRL_SWITCH_AUDIO 12
@@ -211,6 +213,8 @@ typedef struct demux_attachment
 
 struct demuxer_params {
     unsigned char (*matroska_wanted_uids)[16];
+    int matroska_wanted_segment;
+    bool *matroska_was_valid;
 };
 
 typedef struct demuxer {
@@ -283,8 +287,8 @@ typedef struct {
 struct demux_packet *new_demux_packet(size_t len);
 // data must already have suitable padding
 struct demux_packet *new_demux_packet_fromdata(void *data, size_t len);
+struct demux_packet *new_demux_packet_from(void *data, size_t len);
 void resize_demux_packet(struct demux_packet *dp, size_t len);
-struct demux_packet *clone_demux_packet(struct demux_packet *pack);
 void free_demux_packet(struct demux_packet *dp);
 
 #ifndef SIZE_MAX
@@ -305,8 +309,8 @@ struct demuxer *new_demuxer(struct MPOpts *opts, struct stream *stream,
                             char *filename);
 void free_demuxer(struct demuxer *demuxer);
 
-struct sh_stream *ds_gsh(struct demux_stream *ds);
-
+void demuxer_add_packet(demuxer_t *demuxer, struct sh_stream *stream,
+                        demux_packet_t *dp);
 void ds_add_packet(struct demux_stream *ds, struct demux_packet *dp);
 void ds_read_packet(struct demux_stream *ds, struct stream *stream, int len,
                     double pts, int64_t pos, bool keyframe);
@@ -414,5 +418,7 @@ int demuxer_angles_count(struct demuxer *demuxer);
 
 struct sh_stream *demuxer_stream_by_demuxer_id(struct demuxer *d,
                                                enum stream_type t, int id);
+
+bool demuxer_stream_is_selected(struct demuxer *d, struct sh_stream *stream);
 
 #endif /* MPLAYER_DEMUXER_H */
