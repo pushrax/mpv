@@ -70,6 +70,7 @@ void set_default_mplayer_options(struct MPOpts *opts)
         .sub_id = -1,
         .audio_display = 1,
         .sub_visibility = 1,
+        .sub_pos = 100,
         .extension_parsing = 1,
         .audio_output_channels = 2,
         .audio_output_format = -1,  // AF_FORMAT_UNKNOWN
@@ -85,6 +86,8 @@ void set_default_mplayer_options(struct MPOpts *opts)
         .ass_vsfilter_aspect_compat = 1,
         .ass_style_override = 1,
         .use_embedded_fonts = 1,
+
+        .suboverlap_enabled = 1,
 
         .lavc_param = {
             .workaround_bugs = 1, // autodetect

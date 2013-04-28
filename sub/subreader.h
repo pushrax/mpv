@@ -45,9 +45,6 @@ extern int sub_match_fuzziness;
 #define SUB_JACOSUB  12
 #define SUB_MPL2     13
 
-// One of the SUB_* constant above
-extern int sub_format;
-
 #define SUB_MAX_TEXT 12
 #define SUB_ALIGNMENT_BOTTOMLEFT       1
 #define SUB_ALIGNMENT_BOTTOMCENTER     2
@@ -81,15 +78,5 @@ typedef struct sub_data {
 
 struct MPOpts;
 sub_data* sub_read_file (char *filename, float pts, struct MPOpts *opts);
-subtitle* subcp_recode (subtitle *sub);
-// enca_fd is the file enca uses to determine the codepage.
-// setting to NULL disables enca.
-struct stream;
-void subcp_open (struct stream *st); /* for demux_ogg.c */
-void subcp_close (void); /* for demux_ogg.c */
-#ifdef CONFIG_ENCA
-const char* guess_buffer_cp(unsigned char* buffer, int buflen, const char *preferred_language, const char *fallback);
-const char* guess_cp(struct stream *st, const char *preferred_language, const char *fallback);
-#endif
 
 #endif /* MPLAYER_SUBREADER_H */
