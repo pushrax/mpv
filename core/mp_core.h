@@ -29,9 +29,7 @@
 
 #define INITIALIZED_VO      1
 #define INITIALIZED_AO      2
-
 #define INITIALIZED_GETCH2  8
-#define INITIALIZED_SPUDEC  32
 #define INITIALIZED_STREAM  64
 #define INITIALIZED_DEMUXER 512
 #define INITIALIZED_ACODEC  1024
@@ -287,7 +285,6 @@ extern int forced_subs_only;
 
 void uninit_player(struct MPContext *mpctx, unsigned int mask);
 void reinit_audio_chain(struct MPContext *mpctx);
-void init_vo_spudec(struct MPContext *mpctx);
 double playing_audio_pts(struct MPContext *mpctx);
 struct track *mp_add_subtitles(struct MPContext *mpctx, char *filename,
                                float fps, int noerr);

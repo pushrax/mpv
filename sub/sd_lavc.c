@@ -43,6 +43,15 @@ struct sd_lavc_priv {
 
 static bool probe(struct sh_sub *sh)
 {
+    // lavc dvdsubdec doesn't read color/resolution on Libav 9.1 and below
+    // Don't use it for new ffmpeg; spudec can't handle ffmpeg .idx demuxing
+    // (ffmpeg added .idx demuxing during lavc 54.79.100).
+    // This we fall back to sd_spu on old Libav versions.
+#if LIBAVCODEC_VERSION_INT < AV_VERSION_INT(54, 40, 0)
+    if (is_dvd_sub(sh->gsh->codec))
+        return false;
+#endif
+
     enum AVCodecID cid = mp_codec_to_av_codec_id(sh->gsh->codec);
     // Supported codecs must be known to decode to paletted bitmaps
     switch (cid) {
