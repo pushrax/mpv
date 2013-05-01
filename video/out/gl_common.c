@@ -954,14 +954,12 @@ void mpgl_unset_context(MPGLContext *ctx)
 
 void mpgl_lock(MPGLContext *ctx)
 {
-    pthread_mutex_lock(&ctx->gl_lock);
     mpgl_set_context(ctx);
 }
 
 void mpgl_unlock(MPGLContext *ctx)
 {
     mpgl_unset_context(ctx);
-    pthread_mutex_unlock(&ctx->gl_lock);
 }
 
 bool mpgl_is_thread_safe(MPGLContext *ctx)

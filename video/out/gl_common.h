@@ -28,8 +28,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#include <pthread.h>
-
 #include "config.h"
 #include "core/mp_msg.h"
 
@@ -139,8 +137,6 @@ typedef struct MPGLContext {
     // proper resize)
     void (*register_resize_callback)(struct vo *vo,
                                      void (*cb)(struct vo *vo, int w, int h));
-
-    pthread_mutex_t gl_lock;
 
     // For free use by the backend.
     void *priv;
